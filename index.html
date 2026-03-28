@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Geoscope</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<!-- Firebase - Updated to v12.11.0 -->
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+
+:root {
+  --bg: #030a14;
+  --glow: #00d4ff;
+  --glow2: #0099cc;
+  --card-bg: rgba(5, 18, 35, 0.72);
+  --border: rgba(0, 212, 255, 0.18);
+  --text: #e8f4ff;
+  --muted: rgba(180, 215, 240, 0.5);
+  --font-title: 'Bebas Neue', sans-serif;
+  --font-body: 'Outfit', sans-serif;
+}
+
+html, body {
+  width:100%; height:100%;
+  overflow:hidden;
+  background: var(--bg);
+  font-family: var(--font-body);
+  color: var(--text);
+}
+
+/* ── STARS ── */
+#stars {
+  position:fixed; inset:0;
+  background: radial-gradient(ellipse at 50% 40%, #071828 0%, #030a14 65%);
+}
+.star {
+  position:absolute; border-radius:50%;
+  background:white;
+  animation: twinkle var(--d) ease-in-out infinite var(--dl);
+}
+@keyframes twinkle {
+  0%,100%{ opacity:var(--a); transform:scale(1); }
+  50%{ opacity:1; transform:scale(1.5); }
+}
+
+/* ── LAYOUT ── */
+#stage {
+  position:fixed; inset:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:0;
+}
+
+/* ── GEOSCOPE TITLE ── */
+#title {
+  font-family: var(--font-title);
+  font-size: clamp(52px, 9vw, 110px);
+  letter-spacing: 0.12em;
+  color: transparent;
+  background: linear-gradient(180deg, #ffffff 0%, #88d8f0 50%, #00d4ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  text-shadow: none;
+  position: relative;
+  z-index: 10;
+  animation: titleDrop 1.2s cubic-bezier(0.16,1,0.3,1) 0.3s both;
+  margin-bottom: -24px;
+  filter: drop-shadow(0 0 40px rgba(0,212,255,0.35));
+}
+@keyframes titleDrop {
+  from { opacity:0; transform:translateY(-30px); letter-spacing:0.3em; }
+  to   { opacity:1; transform:translateY(0);     letter-spacing:0.12em; }
+}
+
+/* ── EARTH CONTAINER ── */
+#earth-wrap {
+  position:relative;
+  width: clamp(320px, 44vw, 520px);
+  height: clamp(320px, 44vw, 520px);
+  animation: earthAppear 1.6s cubic-bezier(0.16,1,0.3,1) 0.5s both;
+}
+@keyframes earthAppear {
+  from { opacity:0; transform:scale(0.7); }
+  to   { opacity:1; transform:scale(1); }
+}
+
+/* atmosphere ring */
+#earth-wrap::before {
+  content:'';
+  position:absolute;
+  inset:-16px;
+  border-radius:50%;
+  background: radial-gradient(circle, transparent 46%,
+    rgba(0,212,255,0.10) 55%,
+    rgba(0,150,200,0.06) 65%,
+    transparent 75%);
+  animation: atmosPulse 4s ease-in-out infinite;
+  pointer-events:none;
+}
+@keyframes atmosPulse {
+  0%,100%{ opacity:0.7; transform:scale(1); }
+  50%{ opacity:1; transform:scale(1.015); }
+}
+
+/* outer glow ring */
+#earth-wrap::after {
+  content:'';
+  position:absolute;
+  inset:-40px;
+  border-radius:50%;
+  background: radial-gradient(circle, transparent 50%,
+    rgba(0,212,255,0.04) 60%, transparent 72%);
+  pointer-events:none;
+}
+
+#earth {
+  width:100%; height:100%;
+  border-radius:50%;
+  position:relative;
+  overflow:hidden;
+  box-shadow:
+    inset -50px -25px 70px rgba(0,0,0,0.85),
+    inset 25px 15px 50px rgba(0,180,255,0.08),
+    0 0 60px rgba(0,212,255,0.15),
+    0 0 120px rgba(0,212,255,0.06);
+}
+#earth canvas {
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  border-radius:50%;
+}
+/* specular */
+#earth::after {
+  content:'';
+  position:absolute;
+  top:8%; left:12%;
+  width:28%; height:22%;
+  border-radius:50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.14) 0%, transparent 70%);
+  pointer-events:none; z-index:5;
+}
+
+/* ── SIGN-IN CARD (floats in front of earth) ── */
+#signin-card {
+  position:absolute;
+  top:50%; left:50%;
+  transform:translate(-50%, -50%);
+  z-index:20;
+  width: clamp(260px, 32vw, 340px);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px 28px;
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow:
+    0 24px 80px rgba(0,0,0,0.6),
+    0 0 0 1px rgba(0,212,255,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.07);
+  animation: cardRise 1.2s cubic-bezier(0.16,1,0.3,1) 1s both;
+  text-align:center;
+}
+@keyframes cardRise {
+  from { opacity:0; transform:translate(-50%, -40%); }
+  to   { opacity:1; transform:translate(-50%, -50%); }
+}
+
+.card-subtitle {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--glow);
+  margin-bottom: 6px;
+  font-weight: 500;
+  opacity: 0.8;
+}
+.card-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 24px;
+  letter-spacing: -0.02em;
+}
+
+.google-btn {
+  width:100%;
+  display:flex; align-items:center; justify-content:center; gap:12px;
+  background: white;
+  color: #1a1a1a;
+  border:none; border-radius:10px;
+  padding:13px 20px;
+  font-size:14px; font-weight:600;
+  cursor:pointer;
+  font-family: var(--font-body);
+  letter-spacing:-0.01em;
+  transition: all 0.22s ease;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+.google-btn:hover {
+  transform:translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 0 2px rgba(0,212,255,0.4);
+}
+.google-btn:active { transform:translateY(0); }
+.google-btn:disabled { opacity:0.6; cursor:not-allowed; transform:none; }
+
+.g-icon { width:18px; height:18px; flex-shrink:0; }
+
+.divider {
+  display:flex; align-items:center; gap:10px;
+  margin: 20px 0 0;
+  font-size:10px; letter-spacing:0.12em;
+  text-transform:uppercase; color:var(--muted);
+}
+.divider::before, .divider::after {
+  content:''; flex:1; height:1px;
+  background:rgba(0,212,255,0.1);
+}
+
+.secure-note {
+  font-size:11px; color:var(--muted);
+  margin-top:10px; line-height:1.6;
+}
+
+.loader {
+  display:none; width:16px; height:16px;
+  border:2px solid rgba(0,0,0,0.15);
+  border-top-color:#1a1a1a;
+  border-radius:50%;
+  animation:spin 0.7s linear infinite;
+}
+@keyframes spin { to{transform:rotate(360deg)} }
+.loader.on { display:inline-block; }
+
+.err {
+  font-size:11px; color:#ff7055;
+  margin-top:12px; display:none;
+  background:rgba(255,100,60,0.08);
+  border:1px solid rgba(255,100,60,0.2);
+  border-radius:6px; padding:8px 10px;
+  text-align:left;
+}
+.err.on { display:block; }
+
+/* ── DASHBOARD ── */
+#dashboard {
+  position:fixed; inset:0;
+  background: var(--bg);
+  opacity:0; pointer-events:none;
+  transition:opacity 0.7s ease;
+  overflow-y:auto;
+}
+#dashboard.active { opacity:1; pointer-events:all; }
+
+.dash-top {
+  position:sticky; top:0; z-index:10;
+  background:rgba(3,10,20,0.88);
+  backdrop-filter:blur(14px);
+  border-bottom:1px solid rgba(0,212,255,0.08);
+  padding:14px 36px;
+  display:flex; align-items:center; justify-content:space-between;
+}
+.dash-brand {
+  font-family:var(--font-title);
+  font-size:26px; letter-spacing:0.1em;
+  background:linear-gradient(90deg,#fff,#00d4ff);
+  -webkit-background-clip:text; background-clip:text;
+  color:transparent;
+}
+.dash-user {
+  display:flex; align-items:center; gap:12px;
+  font-size:13px; color:var(--muted);
+}
+.dash-avatar { width:30px; height:30px; border-radius:50%; border:2px solid rgba(0,212,255,0.4); }
+.signout-btn {
+  background:none;
+  border:1px solid rgba(0,212,255,0.2);
+  color:var(--muted); font-size:11px;
+  font-family:var(--font-body); letter-spacing:0.05em;
+  padding:6px 14px; border-radius:5px;
+  cursor:pointer; transition:all 0.2s;
+}
+.signout-btn:hover { border-color:var(--glow); color:var(--glow); }
+
+.dash-body { padding:40px 36px; max-width:1100px; margin:0 auto; }
+
+.section-label {
+  font-size:10px; letter-spacing:0.18em; text-transform:uppercase;
+  color:rgba(0,212,255,0.5); margin-bottom:18px;
+  display:flex; align-items:center; gap:10px;
+}
+.section-label::after { content:''; flex:1; height:1px; background:rgba(0,212,255,0.07); }
+
+.kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:30px; }
+.kpi {
+  background:rgba(5,18,35,0.8);
+  border:1px solid rgba(0,212,255,0.08);
+  border-radius:10px; padding:20px 18px;
+}
+.kpi-l { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+.kpi-v { font-size:28px; font-weight:700; color:var(--text); line-height:1; }
+.kpi-s { font-size:11px; color:var(--glow); margin-top:4px; }
+
+.table-card {
+  background:rgba(5,18,35,0.8);
+  border:1px solid rgba(0,212,255,0.08);
+  border-radius:10px; overflow:hidden; margin-bottom:30px;
+}
+.table-head-row {
+  padding:18px 22px; border-bottom:1px solid rgba(0,212,255,0.06);
+  font-size:14px; font-weight:600;
+  display:flex; justify-content:space-between; align-items:center;
+}
+.table-head-row span:last-child { font-size:11px; color:var(--muted); font-weight:400; }
+table { width:100%; border-collapse:collapse; }
+th {
+  text-align:left; padding:9px 22px;
+  font-size:9px; letter-spacing:0.14em; text-transform:uppercase;
+  color:var(--muted); font-weight:500;
+  background:rgba(0,0,0,0.18);
+}
+td { padding:13px 22px; font-size:13px; border-bottom:1px solid rgba(255,255,255,0.03); }
+tr:last-child td { border-bottom:none; }
+tr:hover td { background:rgba(0,212,255,0.025); }
+.mono { font-family:monospace; font-size:12px; color:var(--muted); }
+.pill {
+  display:inline-block; padding:3px 9px; border-radius:4px;
+  font-size:10px; font-weight:600; letter-spacing:0.05em;
+}
+.pill.good { background:rgba(0,212,255,0.12); color:var(--glow); }
+.pill.off  { background:rgba(255,140,60,0.12); color:#ffaa55; }
+
+@media(max-width:700px){
+  .kpi-grid{grid-template-columns:1fr 1fr;}
+  .dash-body{padding:20px 16px;}
+  #signin-card{width:290px;}
+}
+</style>
+</head>
+<body>
+
+<!-- Stars -->
+<div id="stars"></div>
+
+<!-- Main Stage -->
+<div id="stage">
+
+  <!-- GEOSCOPE title -->
+  <div id="title">GEOSCOPE</div>
+
+  <!-- Earth + card -->
+  <div id="earth-wrap">
+    <div id="earth">
+      <canvas id="globe"></canvas>
+    </div>
+
+    <!-- Sign-in card sits in front of earth -->
+    <div id="signin-card">
+      <div class="card-subtitle">Welcome to</div>
+      <div class="card-title">Sign in to continue</div>
+
+      <button class="google-btn" id="gbtn" onclick="googleSignIn()">
+        <svg class="g-icon" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Continue with Google
+        <div class="loader" id="ldr"></div>
+      </button>
+
+      <div class="err" id="err"></div>
+
+      <div class="divider">secure access</div>
+      <div class="secure-note">Data is private &amp; encrypted via Firebase — only you can see your records.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+  <div class="dash-top">
+    <div class="dash-brand">GEOSCOPE</div>
+    <div class="dash-user">
+      <img class="dash-avatar" id="av" src="" alt="">
+      <span id="uname"></span>
+      <button class="signout-btn" onclick="doSignOut()">Sign Out</button>
+    </div>
+  </div>
+  <div class="dash-body">
+    <div class="section-label">Key Metrics</div>
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-l">Total Sites</div><div class="kpi-v">5</div><div class="kpi-s">coordinates</div></div>
+      <div class="kpi"><div class="kpi-l">Manual Count</div><div class="kpi-v">29</div><div class="kpi-s">HVAC units</div></div>
+      <div class="kpi"><div class="kpi-l">ML Estimate</div><div class="kpi-v">26</div><div class="kpi-s">detected</div></div>
+      <div class="kpi"><div class="kpi-l">Model</div><div class="kpi-v" style="font-size:18px">YOLOv8</div><div class="kpi-s">+ Claude hybrid</div></div>
+    </div>
+
+    <div class="section-label">Survey Results</div>
+    <div class="table-card">
+      <div class="table-head-row">
+        <span>HVAC Detection Data</span>
+        <span>5 sites · private</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Latitude</th><th>Longitude</th>
+            <th>Ground Mounted</th><th>Manual Count</th><th>ML Estimate</th><th>Result</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">01</td><td class="mono">40.1869°</td><td class="mono">-87.6284°</td><td>1</td><td>6</td><td>5</td><td><span class="pill off">−1</span></td></tr>
+          <tr><td class="mono">02</td><td class="mono">38.5037°</td><td class="mono">-82.6807°</td><td>—</td><td>6</td><td>6</td><td><span class="pill good">✓ match</span></td></tr>
+          <tr><td class="mono">03</td><td class="mono">32.4346°</td><td class="mono">-97.8098°</td><td>1</td><td>6</td><td>5</td><td><span class="pill off">−1</span></td></tr>
+          <tr><td class="mono">04</td><td class="mono">44.8463°</td><td class="mono">-73.0788°</td><td>—</td><td>6</td><td>6</td><td><span class="pill good">✓ match</span></td></tr>
+          <tr><td class="mono">05</td><td class="mono">45.0808°</td><td class="mono">-93.7189°</td><td>1</td><td>5</td><td>4</td><td><span class="pill off">−1</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section-label">Pipeline</div>
+    <div style="background:rgba(5,18,35,0.8);border:1px solid rgba(0,212,255,0.08);border-radius:10px;padding:24px;font-family:monospace;font-size:12px;line-height:2.2;color:var(--muted)">
+      <span style="color:#00d4ff">Mapbox Satellite</span> → Tile Extraction →
+      <span style="color:#88d8f0">Building Outline</span> → Image Preprocessing<br>
+      → <span style="color:#00d4ff">Claude Vision</span> (label generation) →
+      Fine-tune <span style="color:#88d8f0">YOLOv8</span><br>
+      → Deploy on <span style="color:#ffaa55">AWS SageMaker</span> →
+      Store results in <span style="color:#00d4ff">Firebase Firestore</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STARS ──
+const starsEl = document.getElementById('stars');
+for(let i=0;i<250;i++){
+  const s=document.createElement('div');
+  s.className='star';
+  const sz=Math.random()*2+0.3;
+  s.style.cssText=`width:${sz}px;height:${sz}px;left:${Math.random()*100}%;top:${Math.random()*100}%;--d:${2+Math.random()*5}s;--dl:${Math.random()*6}s;--a:${0.1+Math.random()*0.35};`;
+  starsEl.appendChild(s);
+}
+
+// ── GLOBE ──
+const canvas=document.getElementById('globe');
+const ctx=canvas.getContext('2d');
+
+function resize(){
+  const s=document.getElementById('earth');
+  canvas.width=s.offsetWidth;
+  canvas.height=s.offsetHeight;
+}
+resize();
+window.addEventListener('resize',resize);
+
+const lands=[
+  // N America
+  [[65,-140],[72,-120],[70,-95],[60,-75],[48,-55],[35,-75],[25,-80],[28,-100],[35,-115],[48,-124],[58,-136],[65,-140]],
+  // S America
+  [[10,-75],[12,-60],[5,-50],[-5,-35],[-15,-38],[-28,-48],[-40,-62],[-52,-68],[-40,-58],[-22,-42],[5,-50],[10,-75]],
+  // Europe + Greenland outline
+  [[58,5],[65,15],[70,28],[65,32],[58,26],[50,14],[45,8],[46,14],[52,22],[58,12],[58,5]],
+  // Africa
+  [[35,10],[37,22],[30,34],[15,42],[0,44],[-10,40],[-28,34],[-36,20],[-28,12],[0,2],[15,-5],[30,5],[35,10]],
+  // Asia (simplified)
+  [[70,32],[75,65],[70,105],[60,130],[50,140],[38,128],[25,118],[20,88],[28,52],[40,42],[58,36],[70,32]],
+  // Australia
+  [[-15,130],[-12,136],[-20,148],[-30,154],[-36,148],[-38,140],[-34,116],[-20,114],[-15,130]],
+  // Antarctica (rough)
+  [[-70,-180],[-70,-90],[-70,0],[-70,90],[-70,180]],
+];
+
+let rot=0;
+
+function project(lat,lon,r){
+  const phi=lat*Math.PI/180;
+  const th=((lon+r)*Math.PI/180);
+  const x=Math.cos(phi)*Math.sin(th);
+  const y=-Math.sin(phi);
+  const z=Math.cos(phi)*Math.cos(th);
+  const W=canvas.width, H=canvas.height;
+  const R=W/2-2;
+  return {x:W/2+R*x, y:H/2+R*y, v:z>0};
+}
+
+function draw(){
+  const W=canvas.width, H=canvas.height, R=W/2-2;
+  const cx=W/2, cy=H/2;
+  ctx.clearRect(0,0,W,H);
+
+  // Ocean
+  const og=ctx.createRadialGradient(cx-R*0.2,cy-R*0.25,0,cx,cy,R);
+  og.addColorStop(0,'#1a4060');
+  og.addColorStop(0.5,'#0d2d4a');
+  og.addColorStop(1,'#061828');
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2);
+  ctx.fillStyle=og; ctx.fill();
+
+  // Grid
+  ctx.strokeStyle='rgba(0,180,255,0.055)'; ctx.lineWidth=0.6;
+  for(let la=-60;la<=60;la+=30){
+    ctx.beginPath(); let f=true;
+    for(let lo=-180;lo<=180;lo+=4){
+      const p=project(la,lo,rot);
+      if(!p.v){f=true;continue;}
+      f?(ctx.moveTo(p.x,p.y),f=false):ctx.lineTo(p.x,p.y);
+    } ctx.stroke();
+  }
+  for(let lo=0;lo<360;lo+=30){
+    ctx.beginPath(); let f=true;
+    for(let la=-85;la<=85;la+=4){
+      const p=project(la,lo,rot);
+      if(!p.v){f=true;continue;}
+      f?(ctx.moveTo(p.x,p.y),f=false):ctx.lineTo(p.x,p.y);
+    } ctx.stroke();
+  }
+
+  // Land
+  lands.forEach(poly=>{
+    const pts=poly.map(([la,lo])=>project(la,lo,rot));
+    const vis=pts.filter(p=>p.v);
+    if(vis.length<2) return;
+    ctx.beginPath(); let first=true;
+    pts.forEach(p=>{
+      if(!p.v){first=true;return;}
+      first?(ctx.moveTo(p.x,p.y),first=false):ctx.lineTo(p.x,p.y);
+    });
+    ctx.closePath();
+    const lg=ctx.createLinearGradient(cx-R,cy-R,cx+R,cy+R);
+    lg.addColorStop(0,'#4a9e40'); lg.addColorStop(1,'#2d6228');
+    ctx.fillStyle=lg; ctx.fill();
+    ctx.strokeStyle='rgba(120,220,100,0.12)'; ctx.lineWidth=0.5; ctx.stroke();
+  });
+
+  // Dark shade (night side)
+  const shade=ctx.createRadialGradient(cx+R*0.3,cy-R*0.15,0,cx,cy,R);
+  shade.addColorStop(0,'transparent');
+  shade.addColorStop(0.55,'transparent');
+  shade.addColorStop(1,'rgba(0,0,0,0.72)');
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2);
+  ctx.fillStyle=shade; ctx.fill();
+
+  // City lights on dark side (dots)
+  const cityLights=[
+    [40.7,-74],[51.5,0],[48.8,2.3],[35.7,139.7],[22.3,114],[1.3,103.8],
+    [55.7,37.6],[19.4,-99.1],[37.8,-122.4],[41.8,12.5],[59.9,30.3],[-33.9,151]
+  ];
+  cityLights.forEach(([la,lo])=>{
+    const p=project(la,lo,rot);
+    if(p.v) return; // only show on dark side (z<0)
+    const pp=project(la,lo,rot);
+    // calculate z for darkness
+    const phi=la*Math.PI/180;
+    const th=((lo+rot)*Math.PI/180);
+    const z=Math.cos(phi)*Math.cos(th);
+    if(z>-0.1) return;
+    const alpha=Math.min(1,(-z-0.1)/0.4)*0.7;
+    ctx.beginPath();
+    ctx.arc(pp.x,pp.y,1.2,0,Math.PI*2);
+    ctx.fillStyle=`rgba(255,240,180,${alpha})`;
+    ctx.fill();
+  });
+
+  rot+=0.18;
+  requestAnimationFrame(draw);
+}
+draw();
+
+// ── FIREBASE ──
+// Your actual Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyCve_SHsDLKK55yhdZu40bh1xq9s0608Jk",
+  authDomain: "geoscope-e6c5a.firebaseapp.com",
+  projectId: "geoscope-e6c5a",
+  storageBucket: "geoscope-e6c5a.firebasestorage.app",
+  messagingSenderId: "682068895264",
+  appId: "1:682068895264:web:54ab24eb4a3208268ffe45"
+};
+
+let auth, db, fbOK=false;
+try {
+  if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  auth=firebase.auth(); 
+  db=firebase.firestore(); 
+  fbOK=true;
+  auth.onAuthStateChanged(u=>{ if(u) enterDash(u); });
+} catch(e){ 
+  console.warn('Firebase init error', e.message); 
+  showErr('Firebase initialization failed. Check console for details.');
+}
+
+async function googleSignIn(){
+  if(!fbOK){
+    showErr('Firebase not configured — please check your configuration.');
+    return;
+  }
+  const btn=document.getElementById('gbtn');
+  const ldr=document.getElementById('ldr');
+  btn.disabled=true; ldr.classList.add('on');
+  hideErr();
+  try{
+    const provider=new firebase.auth.GoogleAuthProvider();
+    const res=await auth.signInWithPopup(provider);
+    const u=res.user;
+    await db.collection('users').doc(u.uid).set({
+      name:u.displayName, 
+      email:u.email, 
+      photo:u.photoURL,
+      lastLogin:firebase.firestore.FieldValue.serverTimestamp()
+    },{merge:true});
+    enterDash(u);
+  }catch(e){
+    console.error('Sign-in error:', e);
+    showErr(e.message);
+    btn.disabled=false; 
+    ldr.classList.remove('on');
+  }
+}
+
+function enterDash(user){
+  // fade out stage
+  document.getElementById('stage').style.transition='opacity 0.6s ease';
+  document.getElementById('stage').style.opacity='0';
+  document.getElementById('stars').style.transition='opacity 0.6s ease';
+  document.getElementById('stars').style.opacity='0.2';
+
+  document.getElementById('uname').textContent=user.displayName||user.email;
+  const av=document.getElementById('av');
+  if(user.photoURL) av.src=user.photoURL;
+  else av.style.display='none';
+
+  setTimeout(()=>{
+    document.getElementById('stage').style.display='none';
+    document.getElementById('dashboard').classList.add('active');
+  },600);
+}
+
+async function doSignOut(){
+  if(!fbOK) return;
+  try {
+    await auth.signOut();
+    location.reload();
+  } catch(e) {
+    console.error('Sign-out error:', e);
+  }
+}
+
+function showErr(msg){ 
+  const e=document.getElementById('err'); 
+  e.textContent=msg; 
+  e.classList.add('on'); 
+}
+function hideErr(){ 
+  document.getElementById('err').classList.remove('on'); 
+}
+</script>
+</body>
+</html>
